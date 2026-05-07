@@ -1,0 +1,5 @@
+"""splitwise-fx — bulk currency conversion CLI for Splitwise."""
+
+from __future__ import annotations
+
+__version__ = "0.1.0"

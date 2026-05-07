@@ -1,0 +1,11 @@
+{
+  "curDate": "20260506",
+  "exchangeRateJson": [
+    {"transCur": "JPY", "baseCur": "CNY", "rateData": 0.043511},
+    {"transCur": "USD", "baseCur": "CNY", "rateData": 6.8487},
+    {"transCur": "EUR", "baseCur": "CNY", "rateData": 8.03250014},
+    {"transCur": "NZD", "baseCur": "CNY", "rateData": 4.06701608},
+    {"transCur": "JPY", "baseCur": "USD", "rateData": 0.006353},
+    {"transCur": "KRW", "baseCur": "USD", "rateData": 0.000763}
+  ]
+}
