@@ -41,6 +41,7 @@ jobs:
     environment: pypi
     permissions:
       id-token: write   # required for PyPI Trusted Publishing
+      contents: read    # default-deny posture; explicit read for completeness
     steps:
       - name: Download dist artifacts
         uses: actions/download-artifact@v4

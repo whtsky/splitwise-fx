@@ -199,8 +199,8 @@ def test_future_date_raises_immediately(cache_dir: Path) -> None:
 def test_completely_unavailable_raises(cache_dir: Path) -> None:
     on = date(2026, 5, 6)
     with respx.mock() as router:
-        # walk-back covers `on` itself + UNIONPAY_FALLBACK_DAYS-1 prior days
-        for offset in range(7):
+        # walk-back covers `on` itself + UNIONPAY_LOOKBACK_DAYS prior days = 8 attempts
+        for offset in range(8):
             router.get(_unionpay_url(on - timedelta(days=offset))).respond(404)
         router.get(_frankfurter_url("JPY", "CNY")).respond(500)
         with CachedRateProvider(cache_dir=cache_dir) as p, pytest.raises(RateUnavailableError):

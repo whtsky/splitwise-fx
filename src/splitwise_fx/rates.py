@@ -4,13 +4,15 @@ from __future__ import annotations
 
 import json
 import os
-from datetime import date, datetime, timedelta
+import tempfile
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
 from typing import Final, Protocol
 
 import httpx
 
+from . import __version__
 from .models import (
     CacheStats,
     CurrencyCode,
@@ -25,9 +27,11 @@ UNIONPAY_BASES: Final[frozenset[str]] = frozenset(
 
 UNIONPAY_URL: Final = "https://www.unionpayintl.com/upload/jfimg/{date}.json"
 FRANKFURTER_URL: Final = "https://api.frankfurter.dev/v2/rate/{src}/{dst}"
-USER_AGENT: Final = "splitwise-fx/0.1 (+https://github.com/whtsky/splitwise-fx)"
+USER_AGENT: Final = f"splitwise-fx/{__version__} (+https://github.com/whtsky/splitwise-fx)"
 
-UNIONPAY_FALLBACK_DAYS: Final = 7
+# Number of days BEFORE `on` to try in the walkback. Total attempts = this + 1
+# (the requested date itself, then up to N prior days).
+UNIONPAY_LOOKBACK_DAYS: Final = 7
 TODAY_TTL: Final = timedelta(hours=1)
 
 
@@ -86,7 +90,7 @@ class CachedRateProvider:
         return self._stats
 
     def get_rate(self, on: date, src: CurrencyCode, dst: CurrencyCode) -> tuple[Decimal, str]:
-        if on > date.today():
+        if on > _today_utc():
             raise RateUnavailableError(f"refusing to fetch future-dated rate: {on}")
 
         memo_key = (on, str(src), str(dst))
@@ -112,7 +116,8 @@ class CachedRateProvider:
     # ---- UnionPay -----------------------------------------------------------
 
     def _try_unionpay(self, on: date, src: CurrencyCode, dst: CurrencyCode) -> Decimal | None:
-        for offset in range(UNIONPAY_FALLBACK_DAYS):
+        # Try `on` itself, then up to UNIONPAY_LOOKBACK_DAYS prior days.
+        for offset in range(UNIONPAY_LOOKBACK_DAYS + 1):
             day = on - timedelta(days=offset)
             response = self._load_unionpay(day)
             if response is None:
@@ -198,17 +203,35 @@ class CachedRateProvider:
     def _is_fresh(self, path: Path, on: date) -> bool:
         if not path.exists():
             return False
-        if on < date.today():
+        # Use UTC consistently so the past/today boundary doesn't drift across
+        # local-clock midnight rollover.
+        if on < _today_utc():
             return True
-        mtime = datetime.fromtimestamp(path.stat().st_mtime)
-        return (datetime.now() - mtime) < TODAY_TTL
+        mtime = datetime.fromtimestamp(path.stat().st_mtime, tz=UTC)
+        return (datetime.now(UTC) - mtime) < TODAY_TTL
 
     @staticmethod
     def _atomic_write(path: Path, data: bytes) -> None:
-        tmp = path.with_suffix(path.suffix + ".tmp")
-        tmp.write_bytes(data)
-        os.replace(tmp, path)
+        # Unique temp filename so concurrent writers don't clobber each other's
+        # in-flight temp files (which would otherwise race on os.replace).
+        fd, tmp_str = tempfile.mkstemp(
+            dir=str(path.parent),
+            prefix=path.stem + ".",
+            suffix=".tmp",
+        )
+        tmp = Path(tmp_str)
+        try:
+            with os.fdopen(fd, "wb") as f:
+                f.write(data)
+            os.replace(tmp, path)
+        except BaseException:
+            tmp.unlink(missing_ok=True)
+            raise
 
 
 def _yyyymmdd(d: date) -> str:
     return d.strftime("%Y%m%d")
+
+
+def _today_utc() -> date:
+    return datetime.now(UTC).date()

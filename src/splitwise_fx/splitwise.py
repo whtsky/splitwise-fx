@@ -10,6 +10,7 @@ from typing import Final, cast
 
 import httpx
 
+from . import __version__
 from .models import (
     ConvertedExpense,
     CurrencyCode,
@@ -42,7 +43,7 @@ class SplitwiseClient:
             headers={
                 "Authorization": f"Bearer {api_key}",
                 "Accept": "application/json",
-                "User-Agent": "splitwise-fx/0.1",
+                "User-Agent": f"splitwise-fx/{__version__}",
             },
             timeout=timeout,
         )
@@ -66,8 +67,16 @@ class SplitwiseClient:
     ) -> dict[str, object]:
         backoff = 1.0
         last_status = 0
+        last_error: Exception | None = None
         for _ in range(MAX_RETRIES):
-            resp = self._http.request(method, path, params=params, json=json)
+            try:
+                resp = self._http.request(method, path, params=params, json=json)
+            except (httpx.TimeoutException, httpx.TransportError) as exc:
+                # Transient: retry with backoff just like 5xx.
+                last_error = exc
+                time.sleep(backoff)
+                backoff *= 2
+                continue
             last_status = resp.status_code
             if resp.status_code == 429:
                 time.sleep(backoff)
@@ -80,6 +89,10 @@ class SplitwiseClient:
             if resp.status_code >= 400:
                 raise SplitwiseError(f"{method} {path} → {resp.status_code}: {resp.text[:300]}")
             return cast("dict[str, object]", resp.json())
+        if last_error is not None and last_status == 0:
+            raise SplitwiseError(
+                f"{method} {path} gave up after {MAX_RETRIES} retries: {last_error}"
+            ) from last_error
         raise SplitwiseError(
             f"{method} {path} gave up after {MAX_RETRIES} retries (last={last_status})"
         )

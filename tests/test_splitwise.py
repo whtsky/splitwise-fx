@@ -139,6 +139,23 @@ def test_request_retries_on_429(monkeypatch: pytest.MonkeyPatch) -> None:
     assert route.call_count == 3
 
 
+def test_request_retries_on_transient_httpx_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Connection errors / timeouts get the same backoff treatment as 5xx."""
+    monkeypatch.setattr("splitwise_fx.splitwise.time.sleep", lambda _s: None)
+
+    with respx.mock(base_url=BASE_URL) as router:
+        route = router.get("/get_groups").mock(
+            side_effect=[
+                httpx.ConnectError("kaboom"),
+                httpx.ReadTimeout("slow"),
+                httpx.Response(200, json={"groups": []}),
+            ]
+        )
+        with SplitwiseClient("test-key") as sw:
+            sw.list_groups()
+    assert route.call_count == 3
+
+
 # ---------------------------------------------------------------------------
 # build_update_payload
 # ---------------------------------------------------------------------------
